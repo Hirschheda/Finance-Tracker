@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "https://jt23dkziya.execute-api.us-east-2.amazonaws.com/",
+  baseURL: "insert api url here",
 });
 
 export default API;

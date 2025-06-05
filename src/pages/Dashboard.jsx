@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import axios from "axios";
 import { useAuth } from "react-oidc-context";
+import { Card, Button, Table, Statistic, Row, Col, message } from 'antd';
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
 const api = axios.create({
-  baseURL: "https://jt23dkziya.execute-api.us-east-2.amazonaws.com/",
+  baseURL: "insert api url here",
   headers: {
     'Content-Type': 'application/json',
   }
@@ -16,6 +17,8 @@ export default function Dashboard() {
   const auth = useAuth();
   const userEmail = auth.user?.profile?.email;
 
+  // New state for selected category filter from pie chart
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [form, setForm] = useState({ amount: "", category: "", date: "" });
   const [currentPage, setCurrentPage] = useState(1);
@@ -31,49 +34,40 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchTransactions = async () => {
       if (!userEmail) return;
-      
       setIsLoading(true);
       setError(null);
-      
       try {
-        console.log('Fetching transactions for:', userEmail);
         const response = await api.get(`/transactions?email=${encodeURIComponent(userEmail)}`);
-        console.log('Received transactions:', response.data);
         setTransactions(sortByDateDesc(response.data));
       } catch (err) {
-        console.error('Error fetching transactions:', err);
         setError('Failed to load transactions. Please try again later.');
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchTransactions();
   }, [userEmail]);
 
-  // Loading state
   if (auth.isLoading || isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <p className="text-xl">Loading transactions...</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f6fa' }}>
+        <div style={{ fontSize: 24, color: '#1677ff', fontWeight: 600 }}>Loading transactions...</div>
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <p className="text-xl text-red-600">{error}</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f6fa' }}>
+        <Card style={{ color: '#cf1322', fontSize: 18 }}>{error}</Card>
       </div>
     );
   }
 
-  // Not authenticated state
   if (!auth.isAuthenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <p className="text-xl">Please sign in to view your transactions.</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f6fa' }}>
+        <Card style={{ color: '#1677ff', fontSize: 18 }}>Please sign in to view your transactions.</Card>
       </div>
     );
   }
@@ -93,7 +87,11 @@ export default function Dashboard() {
       }, {})
   ).map(([name, value]) => ({ name, value }));
 
-  // Add transaction handler (now handles both add and edit)
+  // Derived array: either all transactions or only those matching selectedCategory
+  const filteredTransactions = selectedCategory
+    ? transactions.filter(t => t.category === selectedCategory)
+    : transactions;
+
   const addOrEditTransaction = async (e) => {
     e.preventDefault();
     if (!userEmail) return;
@@ -110,177 +108,238 @@ export default function Dashboard() {
         await api.patch(`/transactions`, { ...transactionData, email: userEmail });
         setTransactions(sortByDateDesc(transactions.map(tx => tx.id === editId ? transactionData : tx)));
         setEditId(null);
+        message.success('Transaction updated!');
       } else {
         await api.post("/transactions", { ...transactionData, email: userEmail });
         setTransactions(sortByDateDesc([transactionData, ...transactions]));
+        message.success('Transaction added!');
       }
       setForm({ amount: "", category: "", date: "" });
     } catch (err) {
-      alert("Failed to save transaction. Check console for details.");
-      console.error(err);
+      message.error("Failed to save transaction. Check console for details.");
     }
   };
 
-  // Delete transaction handler
   const deleteTransaction = async (id) => {
     if (!userEmail) return;
     if (!window.confirm("Are you sure you want to delete this transaction?")) return;
     try {
       await api.delete(`/transactions`, { data: { id, email: userEmail } });
       setTransactions(sortByDateDesc(transactions.filter(tx => tx.id !== id)));
+      message.success('Transaction deleted!');
     } catch (err) {
-      alert("Failed to delete transaction. Check console for details.");
-      console.error(err);
+      message.error("Failed to delete transaction. Check console for details.");
     }
   };
 
+  // Ant Design Table columns
+  const columns = [
+    {
+      title: 'Category',
+      dataIndex: 'category',
+      key: 'category',
+    },
+    {
+      title: 'Amount',
+      dataIndex: 'amount',
+      key: 'amount',
+      render: (amt) => (
+        <span style={{ color: amt < 0 ? '#cf1322' : '#3f8600', fontWeight: 600 }}>
+          {amt < 0 ? '-' : '+'}${Math.abs(amt).toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      title: 'Date',
+      dataIndex: 'date',
+      key: 'date',
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, t) => (
+        <>
+          <Button
+            type="link"
+            onClick={() => {
+              setForm({ amount: Math.abs(t.amount), category: t.category, date: t.date });
+              setEditId(t.id);
+            }}
+          >Edit</Button>
+          <Button type="link" danger onClick={() => deleteTransaction(t.id)}>Delete</Button>
+        </>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-green-400 to-teal-600 text-white">
-      <div className="bg-white text-black p-6 rounded-xl shadow-md max-w-4xl w-full text-center">
-        <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
-        
-        {/* Add Transaction Form */}
-        <form onSubmit={addOrEditTransaction} className="mb-6 space-y-4">
-          <div className="flex flex-wrap gap-4 justify-center">
-            <input
-              type="number"
-              placeholder="Amount"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className="px-3 py-2 border rounded"
-              min="0.01"
-              step="0.01"
-              required
-            />
-            <select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="px-3 py-2 border rounded"
-              required
-            >
-              <option value="" disabled>Select Category</option>
-              <option value="Food">Food</option>
-              <option value="Rent">Rent</option>
-              <option value="Utilities">Utilities</option>
-              <option value="Entertainment">Entertainment</option>
-              <option value="Travel">Travel</option>
-              <option value="Shopping">Shopping</option>
-              <option value="Health">Health</option>
-              <option value="Salary">Salary</option>
-              <option value="Other">Other</option>
-            </select>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className="px-3 py-2 border rounded"
-              required
-            />
-            <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">
-              {editId ? "Update Transaction" : "Add Transaction"}
-            </button>
-          </div>
+    <div style={{ background: '#f5f6fa', minHeight: '100vh', padding: 24 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: '#1677ff' }}>Finance 💵 Tracker</div>
+        <Button 
+          type="primary" 
+          size="large" 
+          style={{ fontWeight: 600 }}
+          danger
+          onClick={() => {
+            if (auth.removeUser) auth.removeUser();
+            if (typeof window !== 'undefined' && typeof window.location !== 'undefined') {
+              window.location.href = '/';
+            }
+          }}
+        >
+          Sign Out
+        </Button>
+      </div>
+
+      {/* Add Transaction Form */}
+      <Card style={{ marginBottom: 24 }}>
+        <form onSubmit={addOrEditTransaction} style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'end' }}>
+          <input
+            type="number"
+            placeholder="Amount"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #d9d9d9' }}
+            min="0.01"
+            step="0.01"
+            required
+          />
+          <select
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #d9d9d9' }}
+            required
+          >
+            <option value="" disabled>Select Category</option>
+            <option value="Food">Food</option>
+            <option value="Rent">Rent</option>
+            <option value="Utilities">Utilities</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Travel">Travel</option>
+            <option value="Shopping">Shopping</option>
+            <option value="Health">Health</option>
+            <option value="Salary">Salary</option>
+            <option value="Other">Other</option>
+          </select>
+          <input
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #d9d9d9' }}
+            required
+          />
+          <Button
+            type={editId ? "default" : "primary"}
+            htmlType="submit"
+            style={{ fontWeight: 600, minWidth: 140 }}
+          >
+            {editId ? "Update" : "Add"}
+          </Button>
         </form>
+      </Card>
 
-        {/* Summary Section */}
-        <div className="mb-6">
-          <p className="mb-2">Income: ${income.toFixed(2)}</p>
-          <p className="mb-2">Expenses: ${Math.abs(expenses).toFixed(2)}</p>
-          <p className="font-semibold">Balance: ${balance.toFixed(2)}</p>
-        </div>
+      {/* Summary Cards */}
+      <Row gutter={16} style={{ marginBottom: 24 }}>
+        <Col xs={24} md={8}>
+          <Card>
+            <Statistic title="Total Income" value={income} precision={2} valueStyle={{ color: '#3f8600' }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card>
+            <Statistic title="Total Expenses" value={Math.abs(expenses)} precision={2} valueStyle={{ color: '#cf1322' }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card>
+            <Statistic title="Net Balance" value={balance} precision={2} valueStyle={{ color: '#1677ff' }} />
+          </Card>
+        </Col>
+      </Row>
 
-        {/* Pie Chart and Table Side by Side */}
-        <div className="flex flex-col md:flex-row gap-8 justify-between items-start">
-          {/* Expense Breakdown Chart */}
-          {categoryData.length > 0 && (
-            <div className="flex-1">
-              <h2 className="text-xl font-bold mb-4">Expense Breakdown</h2>
-              <PieChart width={300} height={300} className="mx-auto">
+      {/* Main Content */}
+      <Row gutter={16} align="stretch">
+        <Col xs={24} md={12}>
+          <Card
+            title="Expense Breakdown"
+            style={{ marginBottom: 24, height: 480, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+            bodyStyle={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 0 }}
+          >
+            <div style={{ width: '100%', height: 400, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <PieChart width={380} height={380}>
                 <Pie
                   data={categoryData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  outerRadius={100}
+                  outerRadius={150}
                   fill="#8884d8"
                   label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
                 >
-                  {categoryData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  {categoryData.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={COLORS[index % COLORS.length]}
+                      cursor="pointer"
+                      onClick={() => setSelectedCategory(entry.name)}
+                    />
                   ))}
                 </Pie>
                 <Tooltip />
                 <Legend />
               </PieChart>
             </div>
-          )}
-
-          {/* Transactions Table */}
-          <div className="flex-1">
-            <h2 className="text-xl font-bold mb-4">Recent Transactions</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left bg-white text-black border">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">Category</th>
-                    <th className="border px-2 py-1">Amount</th>
-                    <th className="border px-2 py-1">Date</th>
-                    <th className="border px-2 py-1">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.slice((currentPage - 1) * 5, currentPage * 5).map((t) => (
-                    <tr key={t.id}>
-                      <td className="border px-2 py-1">{t.category}</td>
-                      <td className={`border px-2 py-1 ${t.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        ${Math.abs(t.amount).toFixed(2)}
-                      </td>
-                      <td className="border px-2 py-1">{t.date}</td>
-                      <td className="border px-2 py-1 space-x-2">
-                        <button
-                          type="button"
-                          className="bg-yellow-500 text-white px-2 py-1 rounded"
-                          onClick={() => {
-                            setForm({ amount: Math.abs(t.amount), category: t.category, date: t.date });
-                            setEditId(t.id);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="bg-red-600 text-white px-2 py-1 rounded"
-                          onClick={() => deleteTransaction(t.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Pagination */}
-            <div className="mt-2 flex justify-between">
-              <button
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card
+            title="Recent Transactions"
+            style={{ marginBottom: 24 }}
+          >
+            {/* Show clear filter button if a category is selected */}
+            {selectedCategory && (
+              <div style={{ marginBottom: 12 }}>
+                <Button type="link" onClick={() => {
+                  setSelectedCategory(null);
+                  setCurrentPage(1);
+                }}>
+                  Clear filter: {selectedCategory}
+                </Button>
+              </div>
+            )}
+            {/* Optionally display a small message about filtering */}
+            {selectedCategory && (
+              <div style={{ marginBottom: 12, fontStyle: 'italic', color: '#555' }}>
+                Showing only {selectedCategory} transactions
+              </div>
+            )}
+            <Table
+              dataSource={filteredTransactions.slice((currentPage - 1) * 5, currentPage * 5)}
+              columns={columns}
+              pagination={false}
+              rowKey="id"
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                className="bg-gray-300 text-black px-3 py-1 rounded disabled:opacity-50"
+                style={{ marginRight: 8 }}
               >
                 Prev
-              </button>
-              <button
-                disabled={currentPage * 5 >= transactions.length}
+              </Button>
+              <Button
+                disabled={currentPage * 5 >= filteredTransactions.length}
                 onClick={() => setCurrentPage((p) => p + 1)}
-                className="bg-gray-300 text-black px-3 py-1 rounded disabled:opacity-50"
               >
                 Next
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
-      </div>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 }

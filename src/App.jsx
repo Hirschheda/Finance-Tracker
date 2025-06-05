@@ -1,4 +1,5 @@
 import React from 'react';
+import 'antd/dist/reset.css';
 import { useAuth } from "react-oidc-context";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
@@ -9,15 +10,8 @@ function App() {
 
   const auth = useAuth();
 
-  const signOutRedirect = () => {
-    const clientId = "2unrtdvdr3g1raepl4r614vc0r";
-    const logoutUri = "<logout uri>";
-    const cognitoDomain = "https://<user pool domain>";
-    window.location.href = `${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`;
-  };
-
   const api = axios.create({
-    baseURL: "https://jt23dkziya.execute-api.us-east-2.amazonaws.com/",
+    baseURL: "insert api url here",
   });
 
   if (auth.isAuthenticated) {
@@ -38,8 +32,6 @@ function App() {
       <div className="p-4">
         {auth.isAuthenticated ? (
           <>
-            <p>Welcome, {auth.user?.profile.fullname || auth.user?.profile.email}</p>
-            <button onClick={() => auth.removeUser()& signOutRedirect()}  className="bg-red-500 text-white px-4 py-2">Sign Out</button>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               {auth.isAuthenticated ? (
